@@ -1349,6 +1349,7 @@ def pass_manager_config(
 ):
     """
     Pass the manager config on to any jobs in the jobs array.
+
     Merge with already specified manager config.
 
     Parameters
