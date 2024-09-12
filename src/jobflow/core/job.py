@@ -649,9 +649,7 @@ class Job(MSONable):
                 pass_manager_config(response.replace, passed_config)
 
         try:
-            output = jsanitize(
-                response.output, strict=True, enum_values=True, allow_bson=True
-            )
+            output = jsanitize(response.output, strict=True, allow_bson=True)
         except AttributeError as err:
             raise RuntimeError(
                 "Job output contained an object that is not MSONable and therefore "
@@ -1138,7 +1136,7 @@ class Job(MSONable):
 
         # fireworks can't serialize functions and classes, so explicitly serialize to
         # the job recursively using monty to avoid issues
-        return jsanitize(d, strict=True, enum_values=True, allow_bson=True)
+        return jsanitize(d, strict=True, allow_bson=True)
 
     def __setattr__(self, key, value):
         """Handle setting attributes. Implements a special case for job name."""
@@ -1305,7 +1303,6 @@ def apply_schema(output: Any, schema: type[BaseModel] | None):
     return schema(**output)
 
 
-@job(config=JobConfig(resolve_references=False, on_missing_references=OnMissing.NONE))
 def store_inputs(inputs: Any) -> Any:
     """
     Job to store inputs.
@@ -1355,7 +1352,12 @@ def prepare_replace(
         # add a job with same UUID as the current job to store the outputs of the
         # flow; this job will inherit the metadata and output schema of the current
         # job
-        store_output_job = store_inputs(replace.output)
+        new_config = JobConfig(
+            resolve_references=False, on_missing_references=OnMissing.NONE
+        )
+        store_output_job = Job(
+            store_inputs, function_args=(replace.output,), config=new_config
+        )
         store_output_job.set_uuid(current_job.uuid)
         store_output_job.index = current_job.index + 1
         store_output_job.metadata = current_job.metadata
@@ -1387,17 +1389,15 @@ def pass_manager_config(
     """
     Pass the manager config on to any jobs in the jobs array.
 
+    Merge with already specified manager config.
+
     Parameters
     ----------
     jobs
         A job, flow, or list of jobs/flows.
     manager_config
         A manager config to pass on.
-    metadata
-        Metadata to pass on.
     """
-    from copy import deepcopy
-
     all_jobs: list[Job] = []
 
     def get_jobs(arg):
@@ -1417,4 +1417,4 @@ def pass_manager_config(
 
     # update manager config
     for ajob in all_jobs:
-        ajob.config.manager_config = deepcopy(manager_config)
+        ajob.config.manager_config = manager_config | ajob.config.manager_config
